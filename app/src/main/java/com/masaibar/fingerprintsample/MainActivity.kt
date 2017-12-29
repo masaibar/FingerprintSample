@@ -30,7 +30,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         button_start_auth.setOnClickListener {
-            fingerprintClient.authenticate()
+//            fingerprintClient.authenticate()
+            AuthActivity.start(this)
         }
     }
 }

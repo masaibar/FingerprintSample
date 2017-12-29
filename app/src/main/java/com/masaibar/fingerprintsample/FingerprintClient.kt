@@ -3,6 +3,7 @@ package com.masaibar.fingerprintsample
 import android.content.Context
 import android.os.Handler
 import android.support.v4.hardware.fingerprint.FingerprintManagerCompat
+import android.support.v4.os.CancellationSignal
 import android.util.Log
 
 /**
@@ -15,7 +16,16 @@ class FingerprintClient(context: Context) {
         const val TAG = "FingerprintClient"
     }
 
+    interface AuthResultCallback {
+        fun onError()
+        fun onHelp()
+        fun onSucceeded()
+        fun onFailed()
+    }
+
     private val manager: FingerprintManagerCompat = FingerprintManagerCompat.from(context)
+    private lateinit var cancellationSignal: CancellationSignal
+    private var selfCancelled = false
 
     fun canUse(): Boolean {
         return isHardwareDetected() && hasEnrolledFingerprints()
@@ -35,34 +45,41 @@ class FingerprintClient(context: Context) {
         return manager.hasEnrolledFingerprints()
     }
 
-    /**
-     * このメソッドを二階連続で読んだ時（キャンセルはされていない.....onAuthenticationError()
-     * 登録された指紋で認証した時................................onAuthenticationSucceeded()
-     * 登録されていない指紋で失敗した時...........................onAuthenticationFailed()
-     */
-    fun authenticate() {
+    fun auth(resultCallback: AuthResultCallback) {
+        cancellationSignal = CancellationSignal()
+
         val callback = object : FingerprintManagerCompat.AuthenticationCallback() {
             override fun onAuthenticationError(errMsgId: Int, errString: CharSequence?) {
                 super.onAuthenticationError(errMsgId, errString)
-                Log.d(TAG, "onAuthenticationError, id = $errMsgId, str = $errString")
-            }
-
-            override fun onAuthenticationSucceeded(result: FingerprintManagerCompat.AuthenticationResult?) {
-                super.onAuthenticationSucceeded(result)
-                Log.d(TAG, "onAuthenticationSucceeded, result = ${result}")
+                if (!selfCancelled) {
+                    resultCallback.onError()
+                }
             }
 
             override fun onAuthenticationHelp(helpMsgId: Int, helpString: CharSequence?) {
                 super.onAuthenticationHelp(helpMsgId, helpString)
-                Log.d(TAG, "onAuthenticationHelp, id = $helpMsgId, str = $helpString")
+                if (!selfCancelled) {
+                    resultCallback.onHelp()
+                }
+            }
+
+            override fun onAuthenticationSucceeded(result: FingerprintManagerCompat.AuthenticationResult?) {
+                super.onAuthenticationSucceeded(result)
+                Handler().post( {
+                    resultCallback.onSucceeded()
+                })
             }
 
             override fun onAuthenticationFailed() {
                 super.onAuthenticationFailed()
-                Log.d(TAG, "onAuthenticationFailed")
+                resultCallback.onFailed()
             }
         }
+        manager.authenticate(null, 0, cancellationSignal, callback, null)
+    }
 
-        manager.authenticate(null, 0, null, callback, Handler())
+    fun cancel() {
+        cancellationSignal.cancel()
+        selfCancelled = true
     }
 }
